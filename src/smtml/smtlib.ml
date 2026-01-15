@@ -431,6 +431,8 @@ module Extension = struct
   let statement _ = None
 end
 
-include
-  Dolmen.Smtlib2.Script.Latest.Make (Loc) (Symbol) (Term) (Statement)
-    (Extension)
+module State = Dolmen_loop.State
+module Typer = Dolmen_loop.Typer.Typer (State)
+module Typer_loop =
+  Dolmen_loop.Typer.Make (Dolmen.Std.Expr) (Dolmen.Std.Expr.Print) (State)
+    (Typer)

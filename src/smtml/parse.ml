@@ -36,21 +36,43 @@ module Smtml = struct
 end
 
 module Smtlib = struct
+  open Smtlib
+
   let from_file filename =
-    try
-      let _, st = Smtlib.parse_all (`File (Fpath.to_string filename)) in
-      Lazy.force st
-    with
-    | Dolmen.Std.Loc.Syntax_error (loc, `Regular msg) ->
-      raise
-        (Syntax_error
-           (Fmt.str "%a: syntax error: %t" Dolmen.Std.Loc.print_compact loc msg)
-        )
-    | Dolmen.Std.Loc.Syntax_error (loc, `Advanced (x, _, _, _)) ->
-      raise
-        (Syntax_error
-           (Fmt.str "%a: syntax error: %s" Dolmen.Std.Loc.print_compact loc x)
-        )
+    let parsed, loc = ([], Dolmen.Std.Loc.mk_file (Fpath.to_string filename)) in
+    let base, filename = Fpath.split_base filename in
+    let logic_file =
+      State.mk_file ~loc (Fpath.to_string base)
+        (`File (Fpath.to_string filename))
+    in
+    let response_file = State.mk_file "" (`File "this is unused") in
+    let state =
+      State.empty
+      |> State.init ~debug:false ~report_style:Regular ~max_warn:max_int
+           ~reports:(Dolmen_loop.Report.Conf.mk ~default:Enabled)
+           ~response_file
+             (* these limits are ignored in this example; to actually enforce
+              the limits, one has to use the `run` function from
+              `Dolmen_loop.Pipeline` *)
+           ~time_limit:0. ~size_limit:0.
+      |> State.set State.logic_file logic_file
+      |> Typer.init
+      |> Typer_loop.init ~type_check:true
+    in
+
+    let _final_state, rev_typed_stmts =
+      List.fold_left
+        (fun (state, acc) parsed_stmt ->
+          let state, typed_stmts = Typer_loop.check state parsed_stmt in
+          (state, List.rev_append typed_stmts acc) )
+        (state, []) parsed
+    in
+    let typed_stmts = List.rev rev_typed_stmts in
+    List.iter
+      (fun typed_stmt -> Fmt.epr "%a@." Typer_loop.print typed_stmt)
+      typed_stmts;
+    (* TODO: insert translation *)
+    assert false
 end
 
 let from_file filename =

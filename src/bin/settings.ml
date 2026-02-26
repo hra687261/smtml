@@ -1,5 +1,13 @@
 (* We want these types for settings so that we can derive serializers for yaml/toml as well as cmdliner in the future *)
 
+let backtrace =
+  let doc =
+    "Set to true the recording of backtraces (By default set to false)"
+  in
+  Cmdliner.Arg.(value & flag & info [ "b" ] ~doc)
+
+let rec_backtrace backtrace = Printexc.record_backtrace backtrace
+
 module Run = struct
   type t =
     { debug : bool

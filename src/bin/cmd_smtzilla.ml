@@ -1,6 +1,7 @@
 open Cmdliner
 open Term.Syntax
 open Rresult
+open Settings
 
 let script_name = R.failwith_error_msg (Fpath.of_string "smtzilla.py")
 
@@ -161,7 +162,9 @@ let extract_cmd =
   in
   let extract =
     let+ marshalled_file
-    and+ output_csv in
+    and+ output_csv
+    and+ backtrace in
+    rec_backtrace backtrace;
     Smtml.Feature_extraction.cmd marshalled_file output_csv
   in
   Cmd.v extract_info extract
@@ -179,7 +182,9 @@ let regression_cmd =
     and+ pp_stats
     and+ run_simulation
     and+ output_json
-    and+ input_csv in
+    and+ input_csv
+    and+ backtrace in
+    rec_backtrace backtrace;
     run_regression ~debug ~gradient_boost ~pp_stats ~run_simulation ~output_json
       ~input_csv
   in
@@ -200,7 +205,9 @@ let train_cmd =
     and+ run_simulation
     and+ output_json
     and+ output_csv
-    and+ marshalled_file in
+    and+ marshalled_file
+    and+ backtrace in
+    rec_backtrace backtrace;
     Smtml.Feature_extraction.cmd marshalled_file output_csv;
     run_regression ~debug ~gradient_boost ~pp_stats ~run_simulation ~output_json
       ~input_csv:output_csv

@@ -1,5 +1,6 @@
 open Smtml
 open Cmdliner
+open Settings
 
 let fpath =
   let open Cmdliner in
@@ -79,8 +80,10 @@ let commands =
       and+ solver_type
       and+ solver_mode
       and+ from_file
-      and+ filenames in
+      and+ filenames
+      and+ backtrace in
       let settings =
+        rec_backtrace backtrace;
         Settings.Run.make ~debug ~dry ~print_statistics ~no_strict_status
           ~solver_type ~solver_mode ?from_file filenames
       in
@@ -97,8 +100,12 @@ let commands =
     let term =
       let+ debug
       and+ solver_type
-      and+ filename in
-      let settings = Settings.To_smt2.make ~debug ~solver_type filename in
+      and+ filename
+      and+ backtrace in
+      let settings =
+        rec_backtrace backtrace;
+        Settings.To_smt2.make ~debug ~solver_type filename
+      in
       Cmd_to_smt2.run settings
     in
     Cmd.v info term
@@ -110,7 +117,9 @@ let commands =
       Cmd.info ~version "to-smtml" ~doc
     in
     let term =
-      let+ filename in
+      let+ filename
+      and+ backtrace in
+      rec_backtrace backtrace;
       Cmd_to_smt2.run_to_smtml ~filename
     in
     Cmd.v info term

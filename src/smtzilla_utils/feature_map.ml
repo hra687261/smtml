@@ -132,9 +132,15 @@ type feat =
   | Distinct
   (* Types *)
   | Ty_app
-  | Ty_bitv
+  | Ty_bitv_8
+  | Ty_bitv_32
+  | Ty_bitv_64
+  | Ty_bitv_128
+  | Ty_bitv (* other sizes *)
   | Ty_bool
-  | Ty_fp
+  | Ty_fp_32
+  | Ty_fp_64
+  | Ty_fp (* other sizes *)
   | Ty_int
   | Ty_list
   | Ty_none
@@ -167,9 +173,7 @@ let empty = Map.empty
 let union m1 m2 =
   Map.union
     (fun key v1 v2 ->
-      match key with
-      | Depth -> Some (Int.max v1 v2)
-      | _ -> Some (v1 + v2) )
+      match key with Depth -> Some (Int.max v1 v2) | _ -> Some (v1 + v2) )
     m1 m2
 
 let incr_feat key m =
@@ -314,8 +318,14 @@ let feat_to_string = function
   | Regexp_union -> "Regexp_union"
   | Distinct -> "Distinct"
   | Ty_app -> "Ty_app"
+  | Ty_bitv_8 -> "Ty_bitv_8"
+  | Ty_bitv_32 -> "Ty_bitv_32"
+  | Ty_bitv_64 -> "Ty_bitv_64"
+  | Ty_bitv_128 -> "Ty_bitv_128"
   | Ty_bitv -> "Ty_bitv"
   | Ty_bool -> "Ty_bool"
+  | Ty_fp_32 -> "Ty_fp_32"
+  | Ty_fp_64 -> "Ty_fp_64"
   | Ty_fp -> "Ty_fp"
   | Ty_int -> "Ty_int"
   | Ty_list -> "Ty_list"
@@ -453,8 +463,14 @@ let feat_of_string = function
   | "Regexp_union" -> Regexp_union
   | "Distinct" -> Distinct
   | "Ty_app" -> Ty_app
+  | "Ty_bitv_8" -> Ty_bitv_8
+  | "Ty_bitv_32" -> Ty_bitv_32
+  | "Ty_bitv_64" -> Ty_bitv_64
+  | "Ty_bitv_128" -> Ty_bitv_128
   | "Ty_bitv" -> Ty_bitv
   | "Ty_bool" -> Ty_bool
+  | "Ty_fp_32" -> Ty_fp_32
+  | "Ty_fp_64" -> Ty_fp_64
   | "Ty_fp" -> Ty_fp
   | "Ty_int" -> Ty_int
   | "Ty_list" -> Ty_list

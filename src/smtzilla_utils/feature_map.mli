@@ -132,9 +132,15 @@ type feat =
   | Distinct
   (* Types *)
   | Ty_app
-  | Ty_bitv
+  | Ty_bitv_8
+  | Ty_bitv_32
+  | Ty_bitv_64
+  | Ty_bitv_128
+  | Ty_bitv (* other sizes *)
   | Ty_bool
-  | Ty_fp
+  | Ty_fp_32
+  | Ty_fp_64
+  | Ty_fp (* other sizes *)
   | Ty_int
   | Ty_list
   | Ty_none

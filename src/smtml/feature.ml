@@ -125,8 +125,14 @@ let of_cvtop (cvtop : Ty.Cvtop.t) : Feature_map.feat =
 let of_ty (ty : Ty.t) : Feature_map.feat =
   match ty with
   | Ty_app -> Ty_app
+  | Ty_bitv 8 -> Ty_bitv_8
+  | Ty_bitv 32 -> Ty_bitv_32
+  | Ty_bitv 64 -> Ty_bitv_64
+  | Ty_bitv 128 -> Ty_bitv_128
   | Ty_bitv _ -> Ty_bitv
   | Ty_bool -> Ty_bool
+  | Ty_fp 32 -> Ty_fp_32
+  | Ty_fp 64 -> Ty_fp_64
   | Ty_fp _ -> Ty_fp
   | Ty_int -> Ty_int
   | Ty_list -> Ty_list
@@ -300,8 +306,14 @@ let all_feats =
   let tys =
     List.map of_ty
       [ Ty.Ty_app
+      ; Ty_bitv 8
+      ; Ty_bitv 32
+      ; Ty_bitv 64
+      ; Ty_bitv 128
       ; Ty_bitv 0
       ; Ty_bool
+      ; Ty_fp 32
+      ; Ty_fp 64
       ; Ty_fp 0
       ; Ty_int
       ; Ty_list
@@ -313,8 +325,15 @@ let all_feats =
       ; Ty_roundingMode
       ]
   in
-  Feature_map.[ Max_depth; Mean_depth; Nb_queries; Time ]
-  @ expr_kinds @ unops @ binops @ triops @ relops @ cvtops @ naryops @ tys
+  (* TODO: Ideally do not define statically the set of expr features, but
+   compute it dynamically, from those that appear in the traning data.
+   Experiment with having one "expr_features" column, which contains a mapping
+   of each operator to a its occurences.
+   *)
+  let expr_features =
+    expr_kinds @ unops @ binops @ triops @ relops @ cvtops @ naryops @ tys
+  in
+  Feature_map.[ Max_depth; Mean_depth; Nb_queries; Time ] @ expr_features
 
 let all_feature_names =
   "solver" :: "model" :: List.map Feature_map.feat_to_string all_feats

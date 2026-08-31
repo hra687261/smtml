@@ -443,7 +443,7 @@ module DolmenIntf : sig
     (** [eval ?completion model t] evaluates the term [t] in the given [model].
         If [completion] is true, missing values are completed. *)
     val eval :
-         ?ctx:term Symbol.Map.t
+         ?ctx:(term, func_decl) Mappings_intf.decl Symbol.Map.t
       -> ?completion:bool
       -> model
       -> term

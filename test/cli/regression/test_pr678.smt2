@@ -1,0 +1,6 @@
+(set-logic QF_UFLIA)
+(declare-fun f (Int Int) Bool)
+(assert (f 1 2))
+(assert (f 2 3))
+(assert (not (and (f 1 2) (f 2 3))))
+(check-sat)

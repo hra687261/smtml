@@ -18,3 +18,9 @@
  (enabled_if
   (and %{lib-available:alt-ergo-lib}))
  (deps %{bin:smtml} test_pr677.smt2))
+
+(cram
+ (applies_to test_pr678)
+ (enabled_if
+  (and %{lib-available:colibri2.core} %{lib-available:alt-ergo-lib}))
+ (deps %{bin:smtml} test_pr678.smt2))

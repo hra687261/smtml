@@ -141,10 +141,11 @@ module M = struct
         Option.fold ~none:ConstSet.empty
           ~some:(fun ctx ->
             Symbol.Map.fold
-              (fun _ t acc ->
-                match (t : DTerm.t) with
-                | { term_descr = Cst c; _ } -> ConstSet.add c acc
-                | _ -> acc )
+              (fun _ (d : (term, func_decl) Mappings_intf.decl) acc ->
+                match d with
+                | Sym { term_descr = Cst c; _ } -> ConstSet.add c acc
+                | Sym _ -> acc
+                | Func c -> ConstSet.add c acc )
               ctx ConstSet.empty )
           ctx
 

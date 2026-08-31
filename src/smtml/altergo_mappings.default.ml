@@ -3,14 +3,12 @@
 (* Written by Hichem Rami Ait El Hara *)
 
 module M = struct
-  open Dolmenexpr_to_expr
   module AEL = AltErgoLib
   module Frontend = AEL.Frontend
   module C = AEL.Commands
   module Sat_solver_sig = AEL.Sat_solver_sig
   module Sat_solver = AEL.Sat_solver
   module DStd = Dolmen_std
-  module DBuiltin = DStd.Builtin
   module DM = Dolmen_model
 
   module ConstSet = Set.Make (struct
@@ -123,10 +121,11 @@ module M = struct
 
       let get_new_syms ctx =
         Symbol.Map.fold
-          (fun _ t acc ->
-            match (t : DTerm.t) with
-            | { term_descr = Cst c; _ } -> ConstSet.add c acc
-            | _ -> acc )
+          (fun _ (d : (term, func_decl) Mappings_intf.decl) acc ->
+            match d with
+            | Sym { term_descr = Cst c; _ } -> ConstSet.add c acc
+            | Func c -> ConstSet.add c acc
+            | Sym _ -> acc )
           ctx ConstSet.empty
 
       let add ?(ctx = Symbol.Map.empty) (s : solver) (el : term list) : unit =
@@ -202,8 +201,11 @@ module M = struct
             let e = cgraph_to_value hs g in
             let sym = aeid_to_sym id in
             let tcst =
-              match (Symbol.Map.find_opt sym ctx : DTerm.t option) with
-              | Some { term_descr = Cst c; _ } -> c
+              match
+                ( Symbol.Map.find_opt sym ctx
+                  : (term, func_decl) Mappings_intf.decl option )
+              with
+              | Some (Sym { term_descr = Cst c; _ }) -> c
               | _ -> assert false
             in
             ConstMap.add tcst (ae_expr_to_dvalue e) acc )

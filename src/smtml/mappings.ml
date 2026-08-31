@@ -11,7 +11,7 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
     open Ty
     module Smap = Symbol.Map
 
-    type symbol_ctx = M.term Smap.t
+    type symbol_ctx = (M.term, M.func_decl) decl Smap.t
 
     module Encoder = struct
       let i8 = M.Types.bitv 8
@@ -59,23 +59,23 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
         in
         if M.Internals.caches_consts then
           let sym = M.const name (get_type s.ty) in
-          (Smap.add s sym ctx, sym)
+          (Smap.add s (Sym sym) ctx, sym)
         else
           match Smap.find_opt s ctx with
-          | Some sym -> (ctx, sym)
-          | None ->
+          | Some (Sym sym) -> (ctx, sym)
+          | Some (Func _) | None ->
             let sym = M.const name (get_type s.ty) in
-            (Smap.add s sym ctx, sym)
+            (Smap.add s (Sym sym) ctx, sym)
 
       let make_var (ctx : symbol_ctx) (s : Symbol.t) : symbol_ctx * M.term =
         let name =
           match s.name with Simple name -> name | _ -> assert false
         in
         match Smap.find_opt s ctx with
-        | Some sym -> (ctx, sym)
-        | None ->
+        | Some (Sym sym) -> (ctx, sym)
+        | Some (Func _) | None ->
           let var = M.var name (get_type (Symbol.type_of s)) in
-          (Smap.add s var ctx, var)
+          (Smap.add s (Sym var) ctx, var)
 
       module Bool_impl = struct
         let true_ = M.true_
@@ -746,8 +746,16 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
           let ty = get_type @@ Symbol.type_of sym in
           let tys = List.map (fun e -> get_type @@ Expr.ty e) args in
           let ctx, arguments = encode_exprs ctx args in
-          let sym = M.Func.make name tys ty in
-          (ctx, M.Func.apply sym arguments)
+          let ctx, func =
+            match Smap.find_opt sym ctx with
+            | Some (Func func) -> (ctx, func)
+            | Some (Sym _) -> assert false
+            | None ->
+              let func = M.Func.make name tys ty in
+              (Smap.add sym (Func func) ctx, func)
+          in
+          let term = M.Func.apply func arguments in
+          (ctx, term)
         | Unop (ty, op, e) ->
           let ctx, e = encode_expr ctx e in
           (ctx, unop ty op e)
@@ -879,9 +887,14 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
           symbols
       | None ->
         Smap.iter
-          (fun (sym : Symbol.t) term ->
-            let v = Encoder.value_of_term ~ctx model sym.ty term in
-            Hashtbl.add m sym v )
+          (fun (sym : Symbol.t) decl ->
+            match decl with
+            | Func _ ->
+              (* TODO: support models/values for uninterpreted functions *)
+              ()
+            | Sym term ->
+              let v = Encoder.value_of_term ~ctx model sym.ty term in
+              Hashtbl.add m sym v )
           ctx );
       m
 

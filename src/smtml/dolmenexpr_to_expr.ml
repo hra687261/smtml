@@ -517,13 +517,14 @@ module DolmenIntf = struct
       in
       let m =
         Symbol.Map.fold
-          (fun _ (t : term) acc ->
-            match t with
-            | { term_descr = Cst c; _ } -> (
+          (fun _ (d : (term, func_decl) Mappings_intf.decl) acc ->
+            match d with
+            | Sym { term_descr = Cst c; _ } -> (
               match DM.Model.Cst.find_opt c acc with
               | Some _ -> acc
               | None -> DM.Model.Cst.add c (get_defval c) acc )
-            | _ -> assert false )
+            | Func _ -> acc
+            | Sym _ -> assert false )
           ctx m
       in
       let env =

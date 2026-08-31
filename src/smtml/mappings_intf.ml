@@ -7,6 +7,10 @@
     optimization. It provides a generic interface for working with different SMT
     solvers and their functionalities. *)
 
+type ('term, 'func_decl) decl =
+  | Sym of 'term
+  | Func of 'func_decl
+
 (** {1 Module Types} *)
 
 (** The [M] module type defines the core interface for interacting with SMT
@@ -768,7 +772,7 @@ module type M = sig
     (** [eval ?completion model t] evaluates the term [t] in the given [model].
         If [completion] is true, missing values are completed. *)
     val eval :
-         ?ctx:term Symbol.Map.t
+         ?ctx:(term, func_decl) decl Symbol.Map.t
       -> ?completion:bool
       -> model
       -> term
@@ -795,13 +799,14 @@ module type M = sig
     val reset : solver -> unit
 
     (** [add solver ts] adds the terms [ts] to the solver [solver]. *)
-    val add : ?ctx:term Symbol.Map.t -> solver -> term list -> unit
+    val add :
+      ?ctx:(term, func_decl) decl Symbol.Map.t -> solver -> term list -> unit
 
     (** [check solver ~assumptions] checks the satisfiability of the solver
         [solver] with the given [assumptions]. Returns [`Sat], [`Unsat], or
         [`Unknown]. *)
     val check :
-         ?ctx:term Symbol.Map.t
+         ?ctx:(term, func_decl) decl Symbol.Map.t
       -> solver
       -> assumptions:term list
       -> [ `Sat | `Unsat | `Unknown ]

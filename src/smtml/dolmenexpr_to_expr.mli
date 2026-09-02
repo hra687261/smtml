@@ -440,8 +440,11 @@ module DolmenIntf : sig
     (** [get_symbols model] retrieves the list of symbols in the model. *)
     val get_symbols : model -> Symbol.t list
 
-    (** [eval ?completion model t] evaluates the term [t] in the given [model].
-        If [completion] is true, missing values are completed. *)
+    (** [eval ?ctx ?completion model t] evaluates the term [t] in the given [model].
+        If [completion] is true, missing values are completed.
+        [ctx] maps every symbol to its corresponding term or function, its used
+        to assign complete the model by assigning values to declared but
+        uncontrained symbols. *)
     val eval :
          ?ctx:(term, func_decl) Mappings_intf.decl Symbol.Map.t
       -> ?completion:bool

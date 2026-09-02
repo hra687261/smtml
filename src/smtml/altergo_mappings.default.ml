@@ -197,18 +197,24 @@ module M = struct
 
       let mk_model ~ctx model =
         AEL.ModelMap.fold
-          (fun ((hs, _, _) as id) g acc ->
-            let e = cgraph_to_value hs g in
-            let sym = aeid_to_sym id in
-            let tcst =
-              match
-                ( Symbol.Map.find_opt sym ctx
-                  : (term, func_decl) Mappings_intf.decl option )
-              with
-              | Some (Sym { term_descr = Cst c; _ }) -> c
-              | _ -> assert false
-            in
-            ConstMap.add tcst (ae_expr_to_dvalue e) acc )
+          (fun ((hs, tyl, _) as id) g acc ->
+            match tyl with
+            | _ :: _ ->
+              (* Skipping uninterpreted functions because we don't support their
+                 models yet *)
+              acc
+            | [] ->
+              let e = cgraph_to_value hs g in
+              let sym = aeid_to_sym id in
+              let tcst =
+                match
+                  ( Symbol.Map.find_opt sym ctx
+                    : (term, func_decl) Mappings_intf.decl option )
+                with
+                | Some (Sym { term_descr = Cst c; _ }) -> c
+                | _ -> assert false
+              in
+              ConstMap.add tcst (ae_expr_to_dvalue e) acc )
           model ConstMap.empty
 
       let check ?(ctx = Symbol.Map.empty) (s : solver) ~(assumptions : term list)

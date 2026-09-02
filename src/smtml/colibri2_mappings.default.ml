@@ -144,8 +144,10 @@ module M = struct
               (fun _ (d : (term, func_decl) Mappings_intf.decl) acc ->
                 match d with
                 | Sym { term_descr = Cst c; _ } -> ConstSet.add c acc
-                | Sym _ -> acc
-                | Func c -> ConstSet.add c acc )
+                | _ -> acc
+              (* Skipping uninterpreted functions because we don't support their
+                 models yet *)
+                )
               ctx ConstSet.empty )
           ctx
 

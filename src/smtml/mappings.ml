@@ -882,8 +882,13 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
       | Some symbols ->
         List.iter
           (fun sym ->
-            let v = value model0 (Expr.symbol sym) in
-            Hashtbl.add m sym v )
+            match Smap.find_opt sym ctx with
+            | Some (Func _) ->
+              (* TODO: support models/values for uninterpreted functions *)
+              ()
+            | Some (Sym _) | None ->
+              let v = value model0 (Expr.symbol sym) in
+              Hashtbl.add m sym v )
           symbols
       | None ->
         Smap.iter

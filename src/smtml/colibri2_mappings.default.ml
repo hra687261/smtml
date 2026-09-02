@@ -145,9 +145,8 @@ module M = struct
                 match d with
                 | Sym { term_descr = Cst c; _ } -> ConstSet.add c acc
                 | _ -> acc
-              (* Skipping uninterpreted functions because we don't support their
-                 models yet *)
-                )
+                (* Skipping uninterpreted functions because we don't support their
+                 models yet *) )
               ctx ConstSet.empty )
           ctx
 

@@ -2,8 +2,11 @@
 (* Copyright (C) 2023-2026 formalsec *)
 (* Written by the Smtml programmers *)
 
+(* The memo is keyed by tag but compares the expressions physically: the
+   hash-consing is not domain-safe, so in a program with several domains (e.g.
+   owi) different expressions can have the same tag *)
 let rec rehash memo (e : Expr.t) : Expr.t =
-  match Hashtbl.find_opt memo e.Hc.tag with
+  match List.assq_opt e (Hashtbl.find_all memo e.Hc.tag) with
   | Some e -> e
   | None ->
     let rehash = rehash memo in
@@ -26,7 +29,7 @@ let rec rehash memo (e : Expr.t) : Expr.t =
       | Concat (e1, e2) -> Expr.raw_concat (rehash e1) (rehash e2)
       | Binder (b, vars, e) -> Expr.binder b (List.map rehash vars) (rehash e)
     in
-    Hashtbl.add memo e.Hc.tag rehashed;
+    Hashtbl.add memo e.Hc.tag (e, rehashed);
     rehashed
 
 let read path =

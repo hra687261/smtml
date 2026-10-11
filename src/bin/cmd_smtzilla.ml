@@ -105,7 +105,7 @@ let n_estimators =
   let doc =
     "Number of estimators (must be > 0, used only for gradient-boost)."
   in
-  Arg.(value & opt pos_int 5 & info [ "n-estimators" ] ~doc)
+  Arg.(value & opt pos_int 200 & info [ "n-estimators" ] ~doc)
 
 let max_depth =
   let doc = "Maximum depth of trees (must be > 0)." in
@@ -147,10 +147,17 @@ let output_csv =
 let input_csv =
   let doc =
     "Path to the csv file that holds the query features (produced with the \
-     `extract-features` command)."
+     `replay` command)."
   in
   Arg.(
     required & pos 0 (some csv_file_exists_conv) None (info [] ~doc ~docv:"CSV") )
+
+let test_csv =
+  let doc =
+    "Path to a csv file of test data (produced with the `replay` command, on \
+     other programs than the training data), on which the model is evaluated."
+  in
+  Arg.(value & opt (some csv_file_exists_conv) None & info [ "test" ] ~doc)
 
 let output_json p =
   let doc = "Path to the JSON file to which the model will be exported." in
@@ -276,7 +283,7 @@ let extract_queries_cmd =
   Cmd.v extract_info extract
 
 let run_regression ~debug ~gradient_boost ~n_estimators ~max_depth ~pp_stats
-  ~run_simulation ~input_csv ~output_json =
+  ~run_simulation ~test_csv ~input_csv ~output_json =
   let debug = Bos.Cmd.(if debug then v "--debug" else empty) in
   let gradient_boost =
     Bos.Cmd.(
@@ -292,11 +299,15 @@ let run_regression ~debug ~gradient_boost ~n_estimators ~max_depth ~pp_stats
   let run_simulation =
     Bos.Cmd.(if run_simulation then v "--simulation" else empty)
   in
+  let test_csv =
+    Bos.Cmd.(match test_csv with Some f -> v "--test" % p f | None -> empty)
+  in
   let py_script_path = python_script_path () in
   let cmd =
     Bos.Cmd.(
       v "python3" % p py_script_path %% debug %% gradient_boost %% n_estimators
-      %% max_depth %% pp_stats %% run_simulation % p input_csv % p output_json )
+      %% max_depth %% pp_stats %% run_simulation %% test_csv % p input_csv
+      % p output_json )
   in
   Smtml.Log.debug (fun k -> k "Running: %a@." Bos.Cmd.pp cmd);
   match Bos.OS.Cmd.run cmd with
@@ -310,23 +321,6 @@ let run_regression ~debug ~gradient_boost ~n_estimators ~max_depth ~pp_stats
          necessary python packages to run the script located at: %a.@."
         msg Fpath.pp py_script_path );
     Fmt.failwith "Python script failure"
-
-let extract_features_cmd =
-  let extract_info =
-    let doc =
-      "Given a file containing marshalled smtml queries, extracts features \
-       from those queries which are then used to create the decision tree."
-    in
-    Cmd.info "extract-features" ~doc
-  in
-  let extract =
-    let+ debug
-    and+ marshalled_file
-    and+ output_csv in
-    set_debug debug;
-    Smtml.Feature_extraction.cmd marshalled_file output_csv
-  in
-  Cmd.v extract_info extract
 
 let replay_cmd =
   let replay_info =
@@ -362,10 +356,11 @@ let regression_cmd =
     and+ max_depth
     and+ pp_stats
     and+ run_simulation
+    and+ test_csv
     and+ input_csv
     and+ output_json = output_json 1 in
     set_debug debug;
     run_regression ~debug ~gradient_boost ~n_estimators ~max_depth ~pp_stats
-      ~run_simulation ~output_json ~input_csv
+      ~run_simulation ~test_csv ~output_json ~input_csv
   in
   Cmd.v regression_info regression

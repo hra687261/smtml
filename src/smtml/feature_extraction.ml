@@ -2,7 +2,6 @@
 (* Copyright (C) 2023-2026 formalsec *)
 (* Written by the Smtml programmers *)
 
-open Smtml_prelude.Result.Syntax
 open Feature_map
 
 (* Uses hashes to memoize feats and heights and not redo it for expression for
@@ -73,22 +72,3 @@ let extract_feats assertions : t =
 let output_row oc values =
   Out_channel.output_string oc (String.concat "," values);
   Out_channel.output_char oc '\n'
-
-let cmd marshalled_file output_csv =
-  let res =
-    let* queries = Query_log.read marshalled_file in
-    Bos.OS.File.with_oc output_csv
-      (fun oc () ->
-        output_row oc ("query_id" :: "frequency" :: Feature.all_feature_names);
-        List.iteri
-          (fun id (query, frequency) ->
-            output_row oc
-              ( string_of_int id :: string_of_int frequency
-              :: Feature.feats_to_strings (extract_feats query) ) )
-          (Query_log.unique queries);
-        Ok () )
-      ()
-  in
-  match Result.join res with
-  | Error (`Msg m) -> Fmt.failwith "%s" m
-  | Ok () -> Log.debug (fun k -> k "Done writing to %a\n%!" Fpath.pp output_csv)

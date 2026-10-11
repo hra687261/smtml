@@ -49,7 +49,7 @@ predictor_group = parser.add_argument_group("Regressor parameters")
 predictor_group.add_argument(
     "--n-estimators",
     type=(lambda x: str_to_int("n_estimators", x)),
-    default=5,
+    default=200,
     help="Number of estimators (must be > 0, only used if gradient-boost is True)",
 )
 
@@ -65,7 +65,28 @@ parser.add_argument(
     "--simulation",
     action=argparse.BooleanOptionalAction,
     default=False,
-    help="Run a simulation with the provided training data",
+    help="Run a simulation on the test data (--test), or on the training data",
+)
+
+parser.add_argument(
+    "--test",
+    default=None,
+    help="Path to a CSV file containing the test data (from other programs than \
+      the training data)",
+)
+
+parser.add_argument(
+    "--timeout-penalty",
+    type=float,
+    default=2.0,
+    help="Factor applied to the time of timed out runs (default 2, PAR-2)",
+)
+
+parser.add_argument(
+    "--frequency-weights",
+    choices=["none", "log", "linear"],
+    default="log",
+    help="Weight of a query in the training, from its frequency (default log)",
 )
 
 parser.add_argument(
@@ -93,16 +114,35 @@ frequency_col = "frequency"
 status_col = "status"
 
 
-def mk_data(path):
+non_feature_cols = [solver_col, time_col, query_id_col, frequency_col, status_col]
+
+
+def read_data(path):
     data = pd.read_csv(path)
+    # Several replays of the same queries (e.g. concatenated CSVs): median time
+    # per query and solver, error if any run failed
+    runs = data.groupby([query_id_col, solver_col])
+    data = runs.first()
+    data[time_col] = runs[time_col].median()
+    data[status_col] = runs[status_col].agg(
+        lambda s: "error" if (s == "error").any() else s.iloc[0]
+    )
+    data = data.reset_index()
+    # Queries on which a solver failed have no oracle time
+    errors = data.loc[data[status_col] == "error", query_id_col].unique()
+    if len(errors) > 0:
+        print(f"[INFO] Dropping {len(errors)} queries with errors")
+    data = data[~data[query_id_col].isin(errors)].copy()
+    # Penalise timeouts
+    timeouts = data[status_col] == "timeout"
+    data.loc[timeouts, time_col] = data.loc[timeouts, time_col] * args.timeout_penalty
+    return data
 
-    # Drop columns where all values are 0
-    data = data.loc[:, (data != 0).any(axis=0)]
 
+def mk_data(data):
+    # Drop the features that are 0 in all queries
     feature_cols = [
-        c
-        for c in data.columns
-        if c not in [solver_col, time_col, query_id_col, frequency_col, status_col]
+        c for c in data.columns if c not in non_feature_cols and (data[c] != 0).any()
     ]
     data[query_size_col] = data[feature_cols].sum(axis=1)
     # Oracle times: the minimum time achieved by any solver on the same query
@@ -121,6 +161,12 @@ def mk_models(
         df_solver = data[data[solver_col] == solver]
         X = df_solver[feature_cols]
         Y = df_solver[delta_col]
+        if args.frequency_weights == "log":
+            weights = np.log1p(df_solver[frequency_col])
+        elif args.frequency_weights == "linear":
+            weights = df_solver[frequency_col]
+        else:
+            weights = None
 
         if gradient_boost:
             model = GradientBoostingRegressor(
@@ -133,7 +179,7 @@ def mk_models(
                 max_depth=max_depth, random_state=random_state_const
             )
 
-        model.fit(X, Y)
+        model.fit(X, Y, sample_weight=weights)
         models[solver] = model
 
         if debug:
@@ -149,10 +195,10 @@ def mk_models(
     return models
 
 
-def pp_stats(data, feature_cols):
-    # Compute stats per set of features with a given solver
+def pp_stats(data):
+    # Compute stats per query and solver (over several replays)
     stats = (
-        data.groupby(feature_cols + [solver_col])[time_col]
+        data.groupby([query_id_col, solver_col])[time_col]
         .agg(count="count", mean="mean", median="median", std="std")
         .reset_index()
     )
@@ -180,7 +226,7 @@ def debug_gb(models, feature_cols):
         for i in sorted_idx[:10]:  # top 10 features
             print(f"{feature_cols[i]}: {feature_importance[i]:.4f}")
 
-        for tree in model.estimators_[:, 0]:
+        for tree in model.estimators_[:3, 0]:  # first 3 trees
             print(export_text(tree, feature_names=feature_cols))
 
 
@@ -251,55 +297,47 @@ def export_models_to_json(models, feature_cols):
 
 
 def simulation(data, models, feature_cols):
-    oracle_total = 0
-    regression_total = 0
-    n_queries = 0
-    data["query_hash"] = data[feature_cols].astype(str).agg("-".join, axis=1)
-    static_totals = {solver: 0.0 for solver in data["solver"].unique()}
+    # One row per query: its features and frequency, and the time of each solver
+    queries = data.groupby(query_id_col).first()
+    times = data.pivot(index=query_id_col, columns=solver_col, values=time_col)
+    # Missing times (a solver not run on a query): the mean of the others
+    times = times.apply(lambda row: row.fillna(row.mean()), axis=1)
+    frequency = queries[frequency_col]
 
-    for _, df in data.groupby("query_hash"):
-        features = df[feature_cols].iloc[0:1]
-        # Same features for this group
+    # Model: the solver with the lowest predicted delta
+    deltas = pd.DataFrame(
+        {
+            solver: model.predict(queries[feature_cols])
+            for solver, model in models.items()
+        },
+        index=queries.index,
+    )
+    # Only the solvers that were run on the test data can be chosen
+    predicted = deltas[[s for s in deltas.columns if s in times.columns]].idxmin(axis=1)
+    predicted_times = times.to_numpy()[
+        np.arange(len(times)), times.columns.get_indexer(predicted)
+    ]
+    best_times = times.min(axis=1)
 
-        # Oracle: the best actual time recorded
-        times_by_solver = df.set_index("solver")["time"].to_dict()
-        best_time = min(times_by_solver.values())
-        oracle_total += best_time
+    # Each query counts as many times as it occurs (frequency)
+    oracle_total = (frequency * best_times).sum()
+    regression_total = (frequency * predicted_times).sum()
+    n_wrong = int((predicted_times > best_times).sum())
 
-        # Model: predict delta for each solver
-        deltas = {
-            solver: model.predict(features)[0] for solver, model in models.items()
-        }
-        # Pick solver with the lowest predicted delta (best predicted performance)
-        predicted_solver = min(deltas.items(), key=lambda item: item[1])[0]
-
-        if predicted_solver in times_by_solver:
-            regression_total += times_by_solver[predicted_solver]
-        else:
-            # Fallback to mean if solver not in data for this query
-            regression_total += np.mean(list(times_by_solver.values()))
-
-        # Baseline: Fixed solver comparison
-        for solver in static_totals:
-            if solver in times_by_solver:
-                static_totals[solver] += times_by_solver[solver]
-            else:
-                static_totals[solver] += float(np.mean(list(times_by_solver.values())))
-
-        n_queries += 1
-
-    print(f"\nTotal queries compared: {n_queries}")
+    print(f"\nTotal queries compared: {len(queries)} (wrong choice: {n_wrong})")
     print(f"Total time with optimal choice (oracle) : {oracle_total / 1e9:.2f} s")
     print(f"Total time via regression prediction    : {regression_total / 1e9:.2f} s")
-    for solver, total in static_totals.items():
+    for solver in times.columns:
+        total = (frequency * times[solver]).sum()
         print(f"Total time with fixed solver {solver}: {total / 1e9:.2f} s")
     print(f"\nModel overhead vs. oracle: {(regression_total - oracle_total)/1e9:.2f} s")
 
 
-data, feature_cols = mk_data(str(args.PATH))
-
+raw_data = pd.read_csv(str(args.PATH))
 if args.pp_stats:
-    pp_stats(data, feature_cols)
+    pp_stats(raw_data)
+
+data, feature_cols = mk_data(read_data(str(args.PATH)))
 
 models = mk_models(
     data,
@@ -322,5 +360,15 @@ if args.JSON:
     with open(args.JSON, "w") as f:
         json.dump(models_json, f)
 
-if args.simulation:
+if args.test:
+    test_data = read_data(args.test)
+    # The features absent from the test data are 0
+    test_data = test_data.reindex(
+        columns=list(dict.fromkeys(list(test_data.columns) + feature_cols)),
+        fill_value=0,
+    )
+    print(f"\n=== Test data: {args.test}")
+    simulation(test_data, models, feature_cols)
+elif args.simulation:
+    print("\n=== Training data (no --test)")
     simulation(data, models, feature_cols)

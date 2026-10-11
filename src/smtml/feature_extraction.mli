@@ -5,5 +5,3 @@
 val extract_feats : Expr.t list -> Feature_map.t
 
 val output_row : Out_channel.t -> string list -> unit
-
-val cmd : Fpath.t -> Fpath.t -> unit

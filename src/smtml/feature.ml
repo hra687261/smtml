@@ -145,11 +145,89 @@ let of_ty (ty : Ty.t) : Feature_map.feat =
   | Ty_regexp -> Ty_regexp
   | Ty_roundingMode -> Ty_roundingMode
 
+let of_width (ty : Ty.t) : Feature_map.feat option =
+  match ty with
+  | Ty_bitv 1 -> Some Bitv_1
+  | Ty_bitv 8 -> Some Bitv_8
+  | Ty_bitv 16 -> Some Bitv_16
+  | Ty_bitv 32 -> Some Bitv_32
+  | Ty_bitv 64 -> Some Bitv_64
+  | Ty_bitv 128 -> Some Bitv_128
+  | Ty_bitv _ -> Some Bitv_other
+  | Ty_fp 32 -> Some Fp_32
+  | Ty_fp 64 -> Some Fp_64
+  | Ty_fp _ -> Some Fp_other
+  | Ty_app | Ty_array _ | Ty_bool | Ty_int | Ty_list | Ty_none | Ty_real
+  | Ty_str | Ty_unit | Ty_regexp | Ty_roundingMode ->
+    None
+
+let ty_param (ty : Ty.t) : Feature_map.ty_param =
+  match ty with
+  | Ty_bool -> Bool
+  | Ty_int -> Int
+  | Ty_real -> Real
+  | Ty_bitv _ -> Bitv
+  | Ty_fp _ -> Fp
+  | Ty_str -> Str
+  | Ty_app | Ty_array _ | Ty_list | Ty_none | Ty_unit | Ty_regexp
+  | Ty_roundingMode ->
+    Other
+
+let all_ty_params : Feature_map.ty_param list =
+  [ Bool; Int; Real; Bitv; Fp; Str; Other ]
+
+(* Polymorphic operators which need to be differentiated by their type param *)
+let typed_ops : Feature_map.feat list =
+  [ (* Unops *)
+    Neg
+  ; Not
+  ; Abs
+  ; Sqrt
+  ; Ceil
+  ; Floor
+  ; (* Binops *)
+    Add
+  ; Sub
+  ; Mul
+  ; Div
+  ; Rem
+  ; Pow
+  ; Min
+  ; Max
+  ; And
+  ; Or
+  ; Xor
+  ; (* Triops *)
+    Ite
+  ; (* Relops *)
+    Eq
+  ; Ne
+  ; Lt
+  ; Le
+  ; (* Naryops *)
+    Distinct
+  ]
+
+let all_typed_feats =
+  List.concat_map
+    (fun op ->
+      List.map (fun ty_param -> Feature_map.Typed (op, ty_param)) all_ty_params )
+    typed_ops
+
+let of_op (ty : Ty.t) (op : Feature_map.feat) : Feature_map.feat list =
+  let typed =
+    if List.mem op typed_ops then [ Feature_map.Typed (op, ty_param ty) ]
+    else []
+  in
+  match of_width ty with
+  | Some width -> op :: of_ty ty :: width :: typed
+  | None -> op :: of_ty ty :: typed
+
 let of_naryop (naryop : Ty.Naryop.t) : Feature_map.feat =
   match naryop with
   | Logand -> Logand
   | Logor -> Logor
-  | Concat -> Concat
+  | Concat -> Concat_nary
   | Regexp_union -> Regexp_union
   | Distinct -> Distinct
 
@@ -171,156 +249,173 @@ let of_expr_kind (e : Expr.expr) _ty : Feature_map.feat =
   | Binder _ -> Binder
 
 let all_feats : Feature_map.feat array =
-  Feature_map.
-    [| (* Metadata *)
-       Max_depth
-     ; Mean_depth
-     ; Nb_queries
-     ; Time
-     ; (* Expr kinds *)
-       Val
-     ; Ptr
-     ; Symbol
-     ; List_expr
-     ; App
-     ; Unop_expr
-     ; Binop_expr
-     ; Triop_expr
-     ; Relop_expr
-     ; Cvtop_expr
-     ; Naryop_expr
-     ; Extract
-     ; Concat
-     ; Binder
-     ; (* Unops *)
-       Neg
-     ; Not
-     ; Clz
-     ; Ctz
-     ; Popcnt
-     ; Abs
-     ; Sqrt
-     ; Is_normal
-     ; Is_subnormal
-     ; Is_negative
-     ; Is_positive
-     ; Is_infinite
-     ; Is_nan
-     ; Is_zero
-     ; Ceil
-     ; Floor
-     ; Trunc
-     ; Nearest
-     ; Head
-     ; Tail
-     ; Reverse
-     ; Length
-     ; Trim
-     ; Regexp_star
-     ; Regexp_loop
-     ; Regexp_plus
-     ; Regexp_opt
-     ; Regexp_comp
-     ; (* Binops *)
-       Add
-     ; Sub
-     ; Mul
-     ; Div
-     ; DivU
-     ; Rem
-     ; RemU
-     ; Mod
-     ; Shl
-     ; ShrA
-     ; ShrL
-     ; And
-     ; Or
-     ; Xor
-     ; Implies
-     ; Pow
-     ; Min
-     ; Max
-     ; Copysign
-     ; Rotl
-     ; Rotr
-     ; At
-     ; List_cons
-     ; List_append
-     ; Select
-     ; String_prefix
-     ; String_suffix
-     ; String_contains
-     ; String_last_index
-     ; String_in_re
-     ; Regexp_range
-     ; Regexp_inter
-     ; Regexp_diff
-     ; (* Triops *)
-       Ite
-     ; List_set
-     ; Store
-     ; String_extract
-     ; String_replace
-     ; String_index
-     ; String_replace_all
-     ; String_replace_re
-     ; String_replace_re_all
-     ; (* Relops *)
-       Eq
-     ; Ne
-     ; Lt
-     ; LtU
-     ; Le
-     ; LeU
-     ; (* Cvtops *)
-       ToString
-     ; OfString
-     ; ToBool
-     ; OfBool
-     ; Reinterpret_int
-     ; Reinterpret_float
-     ; DemoteF64
-     ; PromoteF32
-     ; ConvertSI32
-     ; ConvertUI32
-     ; ConvertSI64
-     ; ConvertUI64
-     ; TruncSF32
-     ; TruncUF32
-     ; TruncSF64
-     ; TruncUF64
-     ; Trunc_sat_f32_s
-     ; Trunc_sat_f32_u
-     ; Trunc_sat_f64_s
-     ; Trunc_sat_f64_u
-     ; WrapI64
-     ; Sign_extend
-     ; Zero_extend
-     ; String_to_code
-     ; String_from_code
-     ; String_to_int
-     ; String_from_int
-     ; String_to_float
-     ; String_to_re
-     ; (* Naryops *)
-       Logand
-     ; Logor
-     ; Regexp_union
-     ; (* Types *)
-       Ty_app
-     ; Ty_array
-     ; Ty_bitv
-     ; Ty_bool
-     ; Ty_fp
-     ; Ty_int
-     ; Ty_list
-     ; Ty_none
-     ; Ty_real
-     ; Ty_str
-     ; Ty_unit
-     ; Ty_regexp
-     ; Ty_roundingMode
-    |]
+  Array.append
+    Feature_map.
+      [| (* Metadata *)
+         Max_depth
+       ; Mean_depth
+       ; Nb_queries
+       ; Time
+       ; (* Expr kinds *)
+         Val
+       ; Ptr
+       ; Symbol
+       ; List_expr
+       ; App
+       ; Unop_expr
+       ; Binop_expr
+       ; Triop_expr
+       ; Relop_expr
+       ; Cvtop_expr
+       ; Naryop_expr
+       ; Extract
+       ; Concat
+       ; Binder
+       ; (* Unops *)
+         Neg
+       ; Not
+       ; Clz
+       ; Ctz
+       ; Popcnt
+       ; Abs
+       ; Sqrt
+       ; Is_normal
+       ; Is_subnormal
+       ; Is_negative
+       ; Is_positive
+       ; Is_infinite
+       ; Is_nan
+       ; Is_zero
+       ; Ceil
+       ; Floor
+       ; Trunc
+       ; Nearest
+       ; Head
+       ; Tail
+       ; Reverse
+       ; Length
+       ; Trim
+       ; Regexp_star
+       ; Regexp_loop
+       ; Regexp_plus
+       ; Regexp_opt
+       ; Regexp_comp
+       ; (* Binops *)
+         Add
+       ; Sub
+       ; Mul
+       ; Div
+       ; DivU
+       ; Rem
+       ; RemU
+       ; Mod
+       ; Shl
+       ; ShrA
+       ; ShrL
+       ; And
+       ; Or
+       ; Xor
+       ; Implies
+       ; Pow
+       ; Min
+       ; Max
+       ; Copysign
+       ; Rotl
+       ; Rotr
+       ; Ext_rotl
+       ; Ext_rotr
+       ; At
+       ; List_cons
+       ; List_append
+       ; Select
+       ; String_prefix
+       ; String_suffix
+       ; String_contains
+       ; String_last_index
+       ; String_in_re
+       ; Regexp_range
+       ; Regexp_inter
+       ; Regexp_diff
+       ; (* Triops *)
+         Ite
+       ; List_set
+       ; Store
+       ; String_extract
+       ; String_replace
+       ; String_index
+       ; String_replace_all
+       ; String_replace_re
+       ; String_replace_re_all
+       ; (* Relops *)
+         Eq
+       ; Ne
+       ; Lt
+       ; LtU
+       ; Le
+       ; LeU
+       ; (* Cvtops *)
+         ToString
+       ; OfString
+       ; ToBool
+       ; OfBool
+       ; Reinterpret_int
+       ; Reinterpret_float
+       ; DemoteF64
+       ; PromoteF32
+       ; ConvertSI32
+       ; ConvertUI32
+       ; ConvertSI64
+       ; ConvertUI64
+       ; TruncSF32
+       ; TruncUF32
+       ; TruncSF64
+       ; TruncUF64
+       ; Trunc_sat_f32_s
+       ; Trunc_sat_f32_u
+       ; Trunc_sat_f64_s
+       ; Trunc_sat_f64_u
+       ; WrapI64
+       ; Sign_extend
+       ; Zero_extend
+       ; String_to_code
+       ; String_from_code
+       ; String_to_int
+       ; String_from_int
+       ; String_to_float
+       ; String_to_re
+       ; (* Naryops *)
+         Logand
+       ; Logor
+       ; Regexp_union
+       ; Distinct
+       ; Concat_nary
+       ; (* Types *)
+         Ty_app
+       ; Ty_array
+       ; Ty_bitv
+       ; Ty_bool
+       ; Ty_fp
+       ; Ty_int
+       ; Ty_list
+       ; Ty_none
+       ; Ty_real
+       ; Ty_str
+       ; Ty_unit
+       ; Ty_regexp
+       ; Ty_roundingMode
+       ; (* Widths *)
+         Bitv_1
+       ; Bitv_8
+       ; Bitv_16
+       ; Bitv_32
+       ; Bitv_64
+       ; Bitv_128
+       ; Bitv_other
+       ; Fp_32
+       ; Fp_64
+       ; Fp_other
+      |]
+    (Array.of_list all_typed_feats)
 
 let all_feature_names =
   "solver" :: "model"

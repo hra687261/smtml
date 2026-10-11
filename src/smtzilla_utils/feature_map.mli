@@ -2,6 +2,16 @@
 (* Copyright (C) 2023-2026 formalsec *)
 (* Written by the Smtml programmers *)
 
+(** Type parameters of polymorphic operands, used to count operators per type *)
+type ty_param =
+  | Bool
+  | Int
+  | Real
+  | Bitv
+  | Fp
+  | Str
+  | Other
+
 type feat =
   (* Expr kinds *)
   | Val
@@ -135,6 +145,7 @@ type feat =
   | Logor
   | Regexp_union
   | Distinct
+  | Concat_nary
   (* Types *)
   | Ty_app
   | Ty_array
@@ -149,6 +160,19 @@ type feat =
   | Ty_unit
   | Ty_regexp
   | Ty_roundingMode
+  (* Widths *)
+  | Bitv_1
+  | Bitv_8
+  | Bitv_16
+  | Bitv_32
+  | Bitv_64
+  | Bitv_128
+  | Bitv_other
+  | Fp_32
+  | Fp_64
+  | Fp_other
+  (* Operators per type param *)
+  | Typed of feat * ty_param
   (* Metadata *)
   | Depth
   | Max_depth

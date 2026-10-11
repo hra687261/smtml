@@ -2,6 +2,16 @@
 (* Copyright (C) 2023-2026 formalsec *)
 (* Written by the Smtml programmers *)
 
+(** Type parameters of polymorphic operands *)
+type ty_param =
+  | Bool
+  | Int
+  | Real
+  | Bitv
+  | Fp
+  | Str
+  | Other
+
 type feat =
   (* Expr kinds *)
   | Val
@@ -135,6 +145,7 @@ type feat =
   | Logor
   | Regexp_union
   | Distinct
+  | Concat_nary
   (* Types *)
   | Ty_app
   | Ty_array
@@ -149,6 +160,19 @@ type feat =
   | Ty_unit
   | Ty_regexp
   | Ty_roundingMode
+  (* Widths *)
+  | Bitv_1
+  | Bitv_8
+  | Bitv_16
+  | Bitv_32
+  | Bitv_64
+  | Bitv_128
+  | Bitv_other
+  | Fp_32
+  | Fp_64
+  | Fp_other
+  (* Operators per type param *)
+  | Typed of feat * ty_param
   (* Metadata *)
   | Depth
   | Max_depth
@@ -196,7 +220,26 @@ let rename_depth_to_max_depth m =
     (match Map.find_opt Depth m with None -> assert false | Some v -> v)
     (Map.remove Depth m)
 
-let feat_to_string = function
+let ty_param_to_string = function
+  | Bool -> "bool"
+  | Int -> "int"
+  | Real -> "real"
+  | Bitv -> "bitv"
+  | Fp -> "fp"
+  | Str -> "str"
+  | Other -> "other"
+
+let ty_param_of_string = function
+  | "bool" -> Bool
+  | "int" -> Int
+  | "real" -> Real
+  | "bitv" -> Bitv
+  | "fp" -> Fp
+  | "str" -> Str
+  | "other" -> Other
+  | s -> Fmt.failwith "Unknown type parameter: %s" s
+
+let rec feat_to_string = function
   | Val -> "Val"
   | Ptr -> "Ptr"
   | Symbol -> "Symbol"
@@ -322,6 +365,7 @@ let feat_to_string = function
   | Logor -> "Logor"
   | Regexp_union -> "Regexp_union"
   | Distinct -> "Distinct"
+  | Concat_nary -> "Concat_nary"
   | Ty_app -> "Ty_app"
   | Ty_array -> "Ty_array"
   | Ty_bitv -> "Ty_bitv"
@@ -335,13 +379,25 @@ let feat_to_string = function
   | Ty_unit -> "Ty_unit"
   | Ty_regexp -> "Ty_regexp"
   | Ty_roundingMode -> "Ty_roundingMode"
+  | Bitv_1 -> "Bitv_1"
+  | Bitv_8 -> "Bitv_8"
+  | Bitv_16 -> "Bitv_16"
+  | Bitv_32 -> "Bitv_32"
+  | Bitv_64 -> "Bitv_64"
+  | Bitv_128 -> "Bitv_128"
+  | Bitv_other -> "Bitv_other"
+  | Fp_32 -> "Fp_32"
+  | Fp_64 -> "Fp_64"
+  | Fp_other -> "Fp_other"
+  | Typed (feat, ty_param) ->
+    Fmt.str "%s:%s" (feat_to_string feat) (ty_param_to_string ty_param)
   | Depth -> "depth"
   | Max_depth -> "max_depth"
   | Time -> "time"
   | Nb_queries -> "nb_queries"
   | Mean_depth -> "mean_depth"
 
-let feat_of_string = function
+let rec feat_of_string = function
   | "Val" -> Val
   | "Ptr" -> Ptr
   | "Symbol" -> Symbol
@@ -467,6 +523,7 @@ let feat_of_string = function
   | "Logor" -> Logor
   | "Regexp_union" -> Regexp_union
   | "Distinct" -> Distinct
+  | "Concat_nary" -> Concat_nary
   | "Ty_app" -> Ty_app
   | "Ty_array" -> Ty_array
   | "Ty_bitv" -> Ty_bitv
@@ -480,9 +537,23 @@ let feat_of_string = function
   | "Ty_unit" -> Ty_unit
   | "Ty_regexp" -> Ty_regexp
   | "Ty_roundingMode" -> Ty_roundingMode
+  | "Bitv_1" -> Bitv_1
+  | "Bitv_8" -> Bitv_8
+  | "Bitv_16" -> Bitv_16
+  | "Bitv_32" -> Bitv_32
+  | "Bitv_64" -> Bitv_64
+  | "Bitv_128" -> Bitv_128
+  | "Bitv_other" -> Bitv_other
+  | "Fp_32" -> Fp_32
+  | "Fp_64" -> Fp_64
+  | "Fp_other" -> Fp_other
   | "depth" -> Depth
   | "max_depth" -> Max_depth
   | "time" -> Time
   | "nb_queries" -> Nb_queries
   | "mean_depth" -> Mean_depth
-  | s -> Fmt.failwith "Unknown feature: %s" s
+  | s -> (
+    match String.split_on_char ':' s with
+    | [ feat; ty_param ] ->
+      Typed (feat_of_string feat, ty_param_of_string ty_param)
+    | _ -> Fmt.failwith "Unknown feature: %s" s )

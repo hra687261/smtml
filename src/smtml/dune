@@ -42,6 +42,7 @@
   params
   parse
   parser
+  query_log
   regression_model_default
   rewrite
   smtlib

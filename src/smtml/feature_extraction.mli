@@ -2,14 +2,8 @@
 (* Copyright (C) 2023-2026 formalsec *)
 (* Written by the Smtml programmers *)
 
-val read_marshalled_file :
-     Fpath.t
-  -> ( (string * Expr.t list * bool * int64 * [ `Sat | `Unsat | `Unknown ]) list
-     , [ `Msg of string ] )
-     result
-
 val extract_feats : Expr.t list -> Feature_map.t
 
-val extract_feats_wtime : Expr.t list -> int64 -> Feature_map.t
+val output_row : Out_channel.t -> string list -> unit
 
 val cmd : Fpath.t -> Fpath.t -> unit

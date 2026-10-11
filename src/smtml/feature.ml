@@ -255,7 +255,6 @@ let all_feats : Feature_map.feat array =
          Max_depth
        ; Mean_depth
        ; Nb_queries
-       ; Time
        ; (* Expr kinds *)
          Val
        ; Ptr
@@ -418,16 +417,11 @@ let all_feats : Feature_map.feat array =
     (Array.of_list all_typed_feats)
 
 let all_feature_names =
-  "solver" :: "model"
-  :: Array.fold_right
-       (fun feat acc -> Feature_map.feat_to_string feat :: acc)
-       all_feats []
+  Array.fold_right
+    (fun feat acc -> Feature_map.feat_to_string feat :: acc)
+    all_feats []
 
-let feats_to_str solver_name model feats =
-  let values =
-    solver_name :: Bool.to_string model
-    :: Array.fold_right
-         (fun feat acc -> string_of_int (Feature_map.get_feat feat feats) :: acc)
-         all_feats []
-  in
-  String.cat (String.concat "," values) "\n"
+let feats_to_strings feats =
+  Array.fold_right
+    (fun feat acc -> string_of_int (Feature_map.get_feat feat feats) :: acc)
+    all_feats []

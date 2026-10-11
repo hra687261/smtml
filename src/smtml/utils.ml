@@ -25,16 +25,12 @@ let[@inline never] protect m f =
     Printexc.raise_with_backtrace e bt
 
 (* If the environment variable [QUERY_LOG_PATH] is set, stores and writes
-   all queries sent to the solver (with their timestamps) to the given file *)
-let write =
+   all queries sent to the solver to the given file *)
+let log_query : Expr.t list -> unit =
   match query_log_path with
-  | None -> fun ~model:_ _ _ _ _ -> ()
+  | None -> fun _ -> ()
   | Some path ->
-    let log_entries :
-      (string * Expr.t list * bool * int64 * [ `Sat | `Unknown | `Unsat ]) list
-      Atomic.t =
-      Atomic.make []
-    in
+    let log_entries : Expr.t list list Atomic.t = Atomic.make [] in
     let rec update_entries f =
       let entries = Atomic.get log_entries in
       if not (Atomic.compare_and_set log_entries entries (f entries)) then
@@ -66,31 +62,4 @@ let write =
          (fun _ ->
            close ();
            exit 143 ) );
-    (* write *)
-    fun ~model solver_name assumptions time status ->
-      let entry = (solver_name, assumptions, model, time, status) in
-      update_entries (fun entries -> entry :: entries)
-
-let check_log_query (f : unit -> [ `Sat | `Unknown | `Unsat ]) name assumptions
-    =
-  match query_log_path with
-  | Some _ ->
-    let counter = Mtime_clock.counter () in
-    let res = f () in
-    write ~model:false name assumptions
-      (Mtime.Span.to_uint64_ns (Mtime_clock.count counter))
-      res;
-    res
-  | None -> f ()
-
-let model_log_query f name assumptions =
-  match query_log_path with
-  | Some _ ->
-    let counter = Mtime_clock.counter () in
-    let res = f () in
-    (* TODO: can no model actually mean `Unsat? *)
-    write ~model:true name assumptions
-      (Mtime.Span.to_uint64_ns (Mtime_clock.count counter))
-      (if Option.is_some res then `Sat else `Unknown);
-    res
-  | None -> f ()
+    fun query -> update_entries (fun entries -> query :: entries)

@@ -16,6 +16,6 @@ val of_op : Ty.t -> Feature_map.feat -> Feature_map.feat list
 
 val of_expr_kind : Expr.expr -> 'a -> Feature_map.feat
 
-val feats_to_str : string -> bool -> Feature_map.t -> string
+val feats_to_strings : Feature_map.t -> string list
 
 val all_feature_names : string list

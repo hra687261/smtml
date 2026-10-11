@@ -84,29 +84,29 @@ parser.add_argument(
 
 random_state_const = 42  # for reproductibility
 args = parser.parse_args()
-model_col = "model"
 solver_col = "solver"
 time_col = "time"
 query_size_col = "query_size"
 delta_col = "delta"
+query_id_col = "query_id"
+frequency_col = "frequency"
+status_col = "status"
 
 
 def mk_data(path):
     data = pd.read_csv(path)
 
-    # Keep only check-sat rows (model rows are ignored for now and they always
-    # have a the same features as the previous check-sat row)
-    data = data[~data[model_col]].drop(model_col, axis=1)
-
     # Drop columns where all values are 0
     data = data.loc[:, (data != 0).any(axis=0)]
 
     feature_cols = [
-        c for c in data.columns if c not in [solver_col, time_col, model_col]
+        c
+        for c in data.columns
+        if c not in [solver_col, time_col, query_id_col, frequency_col, status_col]
     ]
     data[query_size_col] = data[feature_cols].sum(axis=1)
-    # Oracle times: the minimum time achieved by any solver for the same features
-    oracle_times = data.groupby(feature_cols)[time_col].transform("min")
+    # Oracle times: the minimum time achieved by any solver on the same query
+    oracle_times = data.groupby(query_id_col)[time_col].transform("min")
     # Delta: the difference between current solver time and the best possible time
     data[delta_col] = data[time_col] - oracle_times
     return (data, feature_cols)

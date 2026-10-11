@@ -607,8 +607,14 @@ module Fresh_bitwuzla (B : Bitwuzla_cxx.S) : M = struct
   end
 
   module Solver = struct
-    let update_options _params options =
+    let update_options params options =
       Bitwuzla_cxx.Options.(set options Produce_models true);
+      Option.iter
+        (fun params ->
+          let timeout = Params.get params Timeout in
+          if timeout <> Params.default_value Timeout then
+            Bitwuzla_cxx.Options.(set options Time_limit_per timeout) )
+        params;
       options
 
     let make ?params ?logic:_ () =

@@ -201,26 +201,22 @@ let rec extract_queries
   destdir seen cnt l =
   match l with
   | [] -> Ok (seen, cnt)
-  | (_, assertions, _, time, _) :: t
-    when time <= 10_000_000L || are_trivial assertions ->
-    (* Time limit to filter out simple tests that are solver in less than
-      0.01 seconds *)
+  | assertions :: t when are_trivial assertions ->
     extract_queries smt2pp destdir seen cnt t
-  | (_, assertions, _, _, status) :: t ->
+  | assertions :: t ->
     (* TODO: do better than Hashtbl.hash *)
     let hash = Hashtbl.hash assertions in
     if IntSet.mem hash seen then extract_queries smt2pp destdir seen cnt t
     else
       let file_path = Fpath.(destdir / Fmt.str "query.%d.smt2" cnt) in
-      Bos.OS.File.writef file_path "%a" (smt2pp ?name:None ~status) assertions
+      Bos.OS.File.writef file_path "%a"
+        (smt2pp ?name:None ?status:None)
+        assertions
       >>= fun _ ->
       extract_queries smt2pp destdir (IntSet.add hash seen) (cnt + 1) t
 
 let rec queries_from_ic smt2pp destdir seen cnt ic =
-  let queries :
-    (string * Expr.t list * bool * int64 * [ `Sat | `Unsat | `Unknown ]) list =
-    Marshal.from_channel ic
-  in
+  let queries : Expr.t list list = Marshal.from_channel ic in
   extract_queries smt2pp destdir seen cnt queries >>= fun (seen, cnt) ->
   queries_from_ic smt2pp destdir seen cnt ic
 
@@ -243,6 +239,24 @@ let extract_queries ?logic (path : Fpath.t) (destdir : Fpath.t) =
   | Error (`Msg msg) ->
     Fmt.failwith "Failed to extract queries from %a\nBecause of: %s" Fpath.pp
       path msg
+
+let solvers =
+  let doc =
+    "Solver to replay the queries with (can be repeated to replay the queries \
+     with multiple solvers)."
+  in
+  Arg.(
+    value
+    & opt_all Solver_type.conv [ Z3_solver; Bitwuzla_solver ]
+    & info [ "solver" ] ~doc )
+
+let timeout =
+  let doc = "Timeout per query and solver, in milliseconds." in
+  Arg.(required & opt (some pos_int) None & info [ "timeout" ] ~doc ~docv:"MS")
+
+let jobs =
+  let doc = "Number of parallel runs." in
+  Arg.(value & opt pos_int 1 & info [ "j"; "jobs" ] ~doc)
 
 let extract_queries_cmd =
   let extract_info =
@@ -314,6 +328,26 @@ let extract_features_cmd =
   in
   Cmd.v extract_info extract
 
+let replay_cmd =
+  let replay_info =
+    let doc =
+      "Given a file containing marshalled smtml queries, runs them on each \
+       solver and writes their features and runtimes to a CSV file."
+    in
+    Cmd.info "replay" ~doc
+  in
+  let replay =
+    let+ debug
+    and+ solvers
+    and+ timeout
+    and+ jobs
+    and+ marshalled_file
+    and+ output_csv in
+    set_debug debug;
+    Replay.cmd ~solvers ~timeout ~jobs marshalled_file output_csv
+  in
+  Cmd.v replay_info replay
+
 let regression_cmd =
   let regression_info =
     let doc =
@@ -335,28 +369,3 @@ let regression_cmd =
       ~run_simulation ~output_json ~input_csv
   in
   Cmd.v regression_info regression
-
-let train_cmd =
-  let train_info =
-    let doc =
-      "Given a marshalled file of queries, generate a CSV file with query \
-       features, and train the regression model on it"
-    in
-    Cmd.info "train" ~doc
-  in
-  let train =
-    let+ debug
-    and+ gradient_boost
-    and+ n_estimators
-    and+ max_depth
-    and+ pp_stats
-    and+ run_simulation
-    and+ marshalled_file
-    and+ output_csv
-    and+ output_json = output_json 2 in
-    set_debug debug;
-    Smtml.Feature_extraction.cmd marshalled_file output_csv;
-    run_regression ~debug ~gradient_boost ~n_estimators ~max_depth ~pp_stats
-      ~run_simulation ~output_json ~input_csv:output_csv
-  in
-  Cmd.v train_info train

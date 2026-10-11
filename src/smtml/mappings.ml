@@ -991,12 +991,6 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
       ; ctx : symbol_ctx Stack.t
       ; mutable last_ctx :
           symbol_ctx option (* Used to save last check-sat ctx *)
-      ; mutable assumptions :
-          Expr.t list (* Assumptions added before the last `check_sat` *)
-      ; mutable unchecked_assumptions :
-          Expr.t list (* Assumptions added after the last `check_sat` *)
-      ; mutable last_assumptions : Expr.t list
-          (* Assumptions from the last `check_sat` *)
       }
 
     type handle = M.handle
@@ -1060,29 +1054,10 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
       let make ?params ?logic () =
         let ctx = Stack.create () in
         Stack.push empty_ctx ctx;
-        { solver = M.Solver.make ?params ?logic ()
-        ; ctx
-        ; last_ctx = None
-        ; assumptions = []
-        ; unchecked_assumptions = []
-        ; last_assumptions = []
-        }
+        { solver = M.Solver.make ?params ?logic (); ctx; last_ctx = None }
 
-      let clone
-        { solver
-        ; ctx
-        ; last_ctx
-        ; assumptions
-        ; unchecked_assumptions
-        ; last_assumptions
-        } =
-        { solver = M.Solver.clone solver
-        ; ctx = Stack.copy ctx
-        ; last_ctx
-        ; assumptions
-        ; unchecked_assumptions
-        ; last_assumptions
-        }
+      let clone { solver; ctx; last_ctx } =
+        { solver = M.Solver.clone solver; ctx = Stack.copy ctx; last_ctx }
 
       let push { solver; ctx; _ } =
         match Stack.top_opt ctx with
@@ -1100,18 +1075,12 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
         Stack.clear s.ctx;
         Stack.push empty_ctx s.ctx;
         s.last_ctx <- None;
-        s.assumptions <- [];
-        s.unchecked_assumptions <- [];
-        s.last_assumptions <- [];
         M.Solver.reset s.solver
 
       let add (s : solver) (exprs : Expr.t list) =
         match Stack.pop_opt s.ctx with
         | None -> Fmt.failwith "Solver.add: current solver context not found"
         | Some ctx ->
-          if Option.is_some Utils.query_log_path then
-            s.unchecked_assumptions <-
-              List.rev_append exprs s.unchecked_assumptions;
           let ctx, exprs = Encoder.encode_exprs ctx exprs in
           Stack.push ctx s.ctx;
           M.Solver.add s.solver ~ctx:ctx.syms exprs
@@ -1120,26 +1089,15 @@ module Make (M_with_make : M_with_make) : S_with_fresh = struct
         match Stack.top_opt s.ctx with
         | None -> Fmt.failwith "Solver.check: invalid solver stack state"
         | Some ctx ->
-          if Option.is_some Utils.query_log_path then (
-            s.assumptions <- s.unchecked_assumptions @ s.assumptions;
-            s.unchecked_assumptions <- [];
-            s.last_assumptions <- assumptions );
+          Utils.log_query assumptions;
           let ctx, encoded_assuptions = Encoder.encode_exprs ctx assumptions in
           s.last_ctx <- Some ctx;
-          Utils.check_log_query
-            (fun () ->
-              M.Solver.check s.solver ~ctx:ctx.syms
-                ~assumptions:encoded_assuptions )
-            M.Internals.name (List.rev assumptions)
+          M.Solver.check s.solver ~ctx:ctx.syms ~assumptions:encoded_assuptions
 
-      let model { solver; last_ctx; assumptions; last_assumptions; _ } =
+      let model { solver; last_ctx; _ } =
         match last_ctx with
         | Some ctx ->
-          Utils.model_log_query
-            (fun () ->
-              M.Solver.model solver |> Option.map (fun m -> { model = m; ctx }) )
-            M.Internals.name
-            (List.rev_append assumptions (List.rev last_assumptions))
+          M.Solver.model solver |> Option.map (fun m -> { model = m; ctx })
         | None ->
           Fmt.failwith "model: Trying to fetch model before check-sat call"
 

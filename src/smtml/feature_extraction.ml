@@ -53,27 +53,6 @@ let rec extract_feats_aux memo (feats : t) (e : Expr.t) : int * t =
     Hashtbl.add memo e.Hc.tag height;
     (height, feats)
 
-let rec read_marshalled_queries results ic : unit =
-  let res :
-    (string * Expr.t list * bool * int64 * [ `Sat | `Unsat | `Unknown ]) list =
-    Marshal.from_channel ic
-  in
-  Log.debug (fun k -> k "Read %d results@." (List.length res));
-  results := List.rev_append res !results;
-  read_marshalled_queries results ic
-
-let read_marshalled_file (path : Fpath.t) =
-  let results = ref [] in
-  let res =
-    Bos.OS.File.with_ic path
-      (fun ic () ->
-        try read_marshalled_queries results ic
-        with End_of_file ->
-          Log.debug (fun k -> k "Finished reading results@.") )
-      ()
-  in
-  res >>| fun () -> List.rev !results
-
 let extract_feats assertions : t =
   (* Memoization table for the heights and the features of visited expressions
    *)
@@ -91,26 +70,25 @@ let extract_feats assertions : t =
   @@ add_mean_depth ((depth_acc + (nb_exprs / 2)) / nb_exprs)
   @@ rename_depth_to_max_depth (add_depth max_depth feats)
 
-let extract_feats_wtime assertions runtime =
-  add_time (Int64.to_int runtime) (extract_feats assertions)
+let output_row oc values =
+  Out_channel.output_string oc (String.concat "," values);
+  Out_channel.output_char oc '\n'
 
 let cmd marshalled_file output_csv =
   let res =
-    read_marshalled_file marshalled_file >>| fun entries ->
+    let* queries = Query_log.read marshalled_file in
     Bos.OS.File.with_oc output_csv
-      (fun oc entries ->
-        Out_channel.output_string oc
-          (String.cat (String.concat "," Feature.all_feature_names) "\n");
-        List.iter
-          (fun (solver_name, exprs, model, t, _) ->
-            if List.compare_lengths exprs [] > 0 then
-              let feats = extract_feats_wtime exprs t in
-              let row = Feature.feats_to_str solver_name model feats in
-              Out_channel.output_string oc row )
-          entries;
+      (fun oc () ->
+        output_row oc ("query_id" :: "frequency" :: Feature.all_feature_names);
+        List.iteri
+          (fun id (query, frequency) ->
+            output_row oc
+              ( string_of_int id :: string_of_int frequency
+              :: Feature.feats_to_strings (extract_feats query) ) )
+          (Query_log.unique queries);
         Ok () )
-      entries
+      ()
   in
-  match Result.join (Result.join res) with
+  match Result.join res with
   | Error (`Msg m) -> Fmt.failwith "%s" m
   | Ok () -> Log.debug (fun k -> k "Done writing to %a\n%!" Fpath.pp output_csv)

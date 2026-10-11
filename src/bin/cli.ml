@@ -133,7 +133,11 @@ let commands =
     let default = Term.(ret (const (`Help (`Plain, None)))) in
     Cmd.group info ~default
       Cmd_smtzilla.
-        [ extract_features_cmd; extract_queries_cmd; regression_cmd; train_cmd ]
+        [ extract_features_cmd
+        ; extract_queries_cmd
+        ; replay_cmd
+        ; regression_cmd
+        ]
   in
 
   let cmd_ls =

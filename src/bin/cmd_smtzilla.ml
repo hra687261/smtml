@@ -342,6 +342,29 @@ let replay_cmd =
   in
   Cmd.v replay_info replay
 
+let rerun_cmd =
+  let rerun_info =
+    let doc =
+      "Given a file containing marshalled smtml queries, runs the queries with \
+       the given ids (the query_id column of $(b,replay)) on each solver and \
+       prints the results."
+    in
+    Cmd.info "rerun" ~doc
+  in
+  let rerun =
+    let+ debug
+    and+ solvers
+    and+ timeout
+    and+ marshalled_file
+    and+ ids =
+      let doc = "Id of a query to rerun." in
+      Arg.(non_empty & pos_right 0 int [] & info [] ~doc ~docv:"ID")
+    in
+    set_debug debug;
+    Replay.rerun ~solvers ~timeout marshalled_file ids
+  in
+  Cmd.v rerun_info rerun
+
 let regression_cmd =
   let regression_info =
     let doc =

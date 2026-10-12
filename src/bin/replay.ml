@@ -27,7 +27,12 @@ let child ~timeout { id; solver } query fd =
   in
   let (module M) = Solver_dispatcher.mappings_of_solver solver in
   let module S = Solver.Batch (M) in
+  let write msg = ignore (Unix.write_substring fd msg 0 (String.length msg)) in
   match
+    write
+      ( String.concat ","
+          (Feature.feats_to_strings (Feature_extraction.extract_feats query))
+      ^ "\n" );
     let s = S.create () in
     Sys.set_signal Sys.sigalrm Signal_default;
     set_timer (float_of_int timeout /. 1000.);
@@ -44,12 +49,12 @@ let child ~timeout { id; solver } query fd =
       | `Unsat -> "unsat"
       | `Unknown -> "unknown"
     in
-    let msg = Fmt.str "%s %Ld" status time in
-    ignore (Unix.write_substring fd msg 0 (String.length msg));
+    write (Fmt.str "%s %Ld" status time);
     Unix._exit 0
   | exception e ->
     Fmt.epr "replay: query %d on %a: %s@." id Solver_type.pp solver
       (Printexc.to_string e);
+    if Printexc.backtrace_status () then Printexc.print_backtrace stderr;
     Unix._exit 1
 
 let spawn ~timeout query job =
@@ -62,20 +67,48 @@ let spawn ~timeout query job =
     Unix.close wr;
     { job; pid; fd = rd; started = Mtime_clock.counter () }
 
+let read_all fd =
+  let buf = Buffer.create 4096 in
+  let bytes = Bytes.create 4096 in
+  let rec loop () =
+    match Unix.read fd bytes 0 (Bytes.length bytes) with
+    | 0 -> Buffer.contents buf
+    | n ->
+      Buffer.add_subbytes buf bytes 0 n;
+      loop ()
+    | exception Unix.Unix_error (EINTR, _, _) -> loop ()
+  in
+  loop ()
+
+(* The child writes the features of the query on a first line, then the
+   status and the time *)
 let result ~timeout r (status : Unix.process_status) =
+  let feats, outcome =
+    match String.split_on_char '\n' (read_all r.fd) with
+    | [ feats; outcome ] -> (feats, outcome)
+    | _ -> ("", "")
+  in
   match status with
-  | WSIGNALED s when s = Sys.sigalrm -> ("timeout", timeout_ns timeout)
-  | _ ->
-    let buf = Bytes.create 64 in
-    let n = Unix.read r.fd buf 0 (Bytes.length buf) in
+  | WSIGNALED s when s = Sys.sigalrm -> ("timeout", timeout_ns timeout, feats)
+  | _ -> (
     let time =
-      match String.split_on_char ' ' (Bytes.sub_string buf 0 n) with
+      match String.split_on_char ' ' outcome with
       | [ status; time ] ->
         Option.map (fun time -> (status, time)) (Int64.of_string_opt time)
       | _ -> None
     in
-    Option.value time
-      ~default:("error", Mtime.Span.to_uint64_ns (Mtime_clock.count r.started))
+    match time with
+    | Some (status, time) -> (status, time, feats)
+    | None ->
+      ( match status with
+      | WEXITED 1 -> (* The child printed the exception *) ()
+      | WEXITED n ->
+        Fmt.epr "replay: query %d on %a: exited with %d@." r.job.id
+          Solver_type.pp r.job.solver n
+      | WSIGNALED n | WSTOPPED n ->
+        Fmt.epr "replay: query %d on %a: killed by signal %d@." r.job.id
+          Solver_type.pp r.job.solver n );
+      ("error", Mtime.Span.to_uint64_ns (Mtime_clock.count r.started), feats) )
 
 let done_runs csv =
   let dones = Hashtbl.create 1024 in
@@ -91,7 +124,7 @@ let done_runs csv =
       rows );
   dones
 
-let cmd ~solvers ~timeout ~jobs log output_csv =
+let read_queries ~solvers log =
   List.iter
     (fun solver ->
       let (module M) = Solver_dispatcher.mappings_of_solver solver in
@@ -103,12 +136,36 @@ let cmd ~solvers ~timeout ~jobs log output_csv =
     | Ok queries -> Array.of_list (Query_log.unique queries)
     | Error (`Msg m) -> Fmt.failwith "%s" m
   in
-  let feats =
-    Array.map
-      (fun (query, _) ->
-        lazy (Feature.feats_to_strings (Feature_extraction.extract_feats query)) )
-      queries
-  in
+  (* Free the duplicates: every run forks this process, and the cost of a fork
+     grows with its memory *)
+  Gc.compact ();
+  queries
+
+let rec wait_pid pid =
+  try Unix.waitpid [] pid with Unix.Unix_error (EINTR, _, _) -> wait_pid pid
+
+let rerun ~solvers ~timeout log ids =
+  let queries = read_queries ~solvers log in
+  Printexc.record_backtrace true;
+  List.iter
+    (fun id ->
+      if id < 0 || id >= Array.length queries then
+        Fmt.failwith "Rerun: there are only %d queries" (Array.length queries);
+      let query, frequency = queries.(id) in
+      Fmt.pr "query %d (frequency %d, %d assertions)@." id frequency
+        (List.length query);
+      List.iter
+        (fun solver ->
+          let r = spawn ~timeout query { id; solver } in
+          let _, status = wait_pid r.pid in
+          let status, time, _feats = result ~timeout r status in
+          Unix.close r.fd;
+          Fmt.pr "  %a: %s %Ld ns@." Solver_type.pp solver status time )
+        solvers )
+    ids
+
+let cmd ~solvers ~timeout ~jobs log output_csv =
+  let queries = read_queries ~solvers log in
   let dones = done_runs output_csv in
   let pending =
     List.concat
@@ -120,27 +177,25 @@ let cmd ~solvers ~timeout ~jobs log output_csv =
         solvers )
   in
   let nb_runs = List.length pending in
-  Log.info (fun k ->
-    k "Replaying %d runs (%d already done)" nb_runs (Hashtbl.length dones) );
   let oc =
     Out_channel.open_gen
       [ Open_wronly; Open_creat; Open_append; Open_text ]
       0o644
       (Fpath.to_string output_csv)
   in
+  Log.app (fun k -> k "Started writing to %a" Fpath.pp output_csv);
   Fun.protect ~finally:(fun () -> Out_channel.close oc) @@ fun () ->
   if Int64.equal (Out_channel.length oc) 0L then
     Feature_extraction.output_row oc
       ( "query_id" :: "frequency" :: "solver" :: "status" :: "time"
       :: Feature.all_feature_names );
   let nb_done = ref 0 in
-  let write { id; solver } (status, time) =
+  let write { id; solver } (status, time, feats) =
     incr nb_done;
     Feature_extraction.output_row oc
       ( string_of_int id
       :: string_of_int (snd queries.(id))
-      :: solver_name solver :: status :: Int64.to_string time
-      :: Lazy.force feats.(id) );
+      :: solver_name solver :: status :: Int64.to_string time :: [ feats ] );
     Out_channel.flush oc;
     Log.info (fun k -> k "Replayed %d/%d" !nb_done nb_runs)
   in
@@ -163,5 +218,9 @@ let cmd ~solvers ~timeout ~jobs log output_csv =
         finished;
       loop pending running
   in
+  Log.app (fun k ->
+    k "Started replaying %d runs (%d already done)" nb_runs
+      (Hashtbl.length dones) );
   loop pending [];
-  Log.debug (fun k -> k "Done writing to %a" Fpath.pp output_csv)
+  Log.app (fun k -> k "Stopped replaying");
+  Log.app (fun k -> k "Done writing to %a" Fpath.pp output_csv)

@@ -265,6 +265,13 @@ let jobs =
   let doc = "Number of parallel runs." in
   Arg.(value & opt pos_int 1 & info [ "j"; "jobs" ] ~doc)
 
+let replay_logic =
+  let doc =
+    "Logic with which the solvers are created, to replay the queries in the \
+     same conditions as the tool that logged them (e.g. QF_BVFP for owi)."
+  in
+  Arg.(value & opt (some logic_conv) None & info [ "logic" ] ~doc)
+
 let extract_queries_cmd =
   let extract_info =
     let doc =
@@ -335,10 +342,11 @@ let replay_cmd =
     and+ solvers
     and+ timeout
     and+ jobs
+    and+ logic = replay_logic
     and+ marshalled_file
     and+ output_csv in
     set_debug debug;
-    Replay.cmd ~solvers ~timeout ~jobs marshalled_file output_csv
+    Replay.cmd ?logic ~solvers ~timeout ~jobs marshalled_file output_csv
   in
   Cmd.v replay_info replay
 
@@ -355,13 +363,14 @@ let rerun_cmd =
     let+ debug
     and+ solvers
     and+ timeout
+    and+ logic = replay_logic
     and+ marshalled_file
     and+ ids =
       let doc = "Id of a query to rerun." in
       Arg.(non_empty & pos_right 0 int [] & info [] ~doc ~docv:"ID")
     in
     set_debug debug;
-    Replay.rerun ~solvers ~timeout marshalled_file ids
+    Replay.rerun ?logic ~solvers ~timeout marshalled_file ids
   in
   Cmd.v rerun_info rerun
 

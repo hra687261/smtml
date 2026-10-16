@@ -171,6 +171,9 @@ type feat =
   | Fp_32
   | Fp_64
   | Fp_other
+  (* Bit-vector multiplications of two non-constant operands *)
+  | Nonlinear_mul
+  | Nonlinear_mul_bits (* sum of their widths *)
   (* Operators per type param *)
   | Typed of feat * ty_param
   (* Metadata *)
@@ -189,6 +192,8 @@ val union : t -> t -> t
 val incr_feat : feat -> t -> t
 
 val get_feat : feat -> t -> int
+
+val add_feat : feat -> int -> t -> t
 
 val add_time : int -> t -> t
 

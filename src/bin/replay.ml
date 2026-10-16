@@ -21,7 +21,7 @@ let solver_name solver =
 
 let timeout_ns timeout = Int64.mul (Int64.of_int timeout) 1_000_000L
 
-let child ~timeout { id; solver } query fd =
+let child ?logic ~timeout { id; solver } query fd =
   let set_timer s =
     ignore (Unix.setitimer ITIMER_REAL { it_interval = 0.; it_value = s })
   in
@@ -33,7 +33,7 @@ let child ~timeout { id; solver } query fd =
       ( String.concat ","
           (Feature.feats_to_strings (Feature_extraction.extract_feats query))
       ^ "\n" );
-    let s = S.create () in
+    let s = S.create ?logic () in
     Sys.set_signal Sys.sigalrm Signal_default;
     set_timer (float_of_int timeout /. 1000.);
     let counter = Mtime_clock.counter () in
@@ -57,12 +57,12 @@ let child ~timeout { id; solver } query fd =
     if Printexc.backtrace_status () then Printexc.print_backtrace stderr;
     Unix._exit 1
 
-let spawn ~timeout query job =
+let spawn ?logic ~timeout query job =
   let rd, wr = Unix.pipe ~cloexec:true () in
   match Unix.fork () with
   | 0 ->
     Unix.close rd;
-    child ~timeout job query wr
+    child ?logic ~timeout job query wr
   | pid ->
     Unix.close wr;
     { job; pid; fd = rd; started = Mtime_clock.counter () }
@@ -144,7 +144,7 @@ let read_queries ~solvers log =
 let rec wait_pid pid =
   try Unix.waitpid [] pid with Unix.Unix_error (EINTR, _, _) -> wait_pid pid
 
-let rerun ~solvers ~timeout log ids =
+let rerun ?logic ~solvers ~timeout log ids =
   let queries = read_queries ~solvers log in
   Printexc.record_backtrace true;
   List.iter
@@ -156,7 +156,7 @@ let rerun ~solvers ~timeout log ids =
         (List.length query);
       List.iter
         (fun solver ->
-          let r = spawn ~timeout query { id; solver } in
+          let r = spawn ?logic ~timeout query { id; solver } in
           let _, status = wait_pid r.pid in
           let status, time, _feats = result ~timeout r status in
           Unix.close r.fd;
@@ -164,7 +164,7 @@ let rerun ~solvers ~timeout log ids =
         solvers )
     ids
 
-let cmd ~solvers ~timeout ~jobs log output_csv =
+let cmd ?logic ~solvers ~timeout ~jobs log output_csv =
   let queries = read_queries ~solvers log in
   let dones = done_runs output_csv in
   let pending =
@@ -202,7 +202,7 @@ let cmd ~solvers ~timeout ~jobs log output_csv =
   let rec loop pending running =
     match pending with
     | job :: pending when List.compare_length_with running jobs < 0 ->
-      loop pending (spawn ~timeout (fst queries.(job.id)) job :: running)
+      loop pending (spawn ?logic ~timeout (fst queries.(job.id)) job :: running)
     | _ when running = [] -> ()
     | _ ->
       let rec wait () =

@@ -223,6 +223,14 @@ let of_op (ty : Ty.t) (op : Feature_map.feat) : Feature_map.feat list =
   | Some width -> op :: of_ty ty :: width :: typed
   | None -> op :: of_ty ty :: typed
 
+let add_nonlinear_mul (ty : Ty.t) (binop : Ty.Binop.t) e1 e2 feats =
+  match (ty, binop, Expr.view e1, Expr.view e2) with
+  | _, _, Val _, _ | _, _, _, Val _ -> feats
+  | Ty_bitv width, Mul, _, _ ->
+    Feature_map.(
+      add_feat Nonlinear_mul_bits width (incr_feat Nonlinear_mul feats) )
+  | _ -> feats
+
 let of_naryop (naryop : Ty.Naryop.t) : Feature_map.feat =
   match naryop with
   | Logand -> Logand
@@ -413,6 +421,9 @@ let all_feats : Feature_map.feat array =
        ; Fp_32
        ; Fp_64
        ; Fp_other
+       ; (* Nonlinear multiplications *)
+         Nonlinear_mul
+       ; Nonlinear_mul_bits
       |]
     (Array.of_list all_typed_feats)
 

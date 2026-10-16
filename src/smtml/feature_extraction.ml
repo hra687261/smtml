@@ -32,7 +32,8 @@ let rec extract_feats_aux memo (feats : t) (e : Expr.t) : int * t =
         (add_op_feats ty (Feature.of_cvtop cvtop) feats, [ t ])
       | Extract (t, _, _) -> (feats, [ t ])
       | Binop (ty, binop, e1, e2) ->
-        (add_op_feats ty (Feature.of_binop binop) feats, [ e1; e2 ])
+        let feats = add_op_feats ty (Feature.of_binop binop) feats in
+        (Feature.add_nonlinear_mul ty binop e1 e2 feats, [ e1; e2 ])
       | Relop (ty, relop, e1, e2) ->
         (add_op_feats ty (Feature.of_relop relop) feats, [ e1; e2 ])
       | Concat (e1, e2) -> (feats, [ e1; e2 ])

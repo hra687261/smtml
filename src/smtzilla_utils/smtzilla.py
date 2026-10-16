@@ -90,6 +90,16 @@ parser.add_argument(
 )
 
 parser.add_argument(
+    "--delta-weight",
+    type=float,
+    default=0.1,
+    help="Multiply the weight of a query by 1 + d / DELTA_WEIGHT, where d is the \
+      time in seconds lost by choosing the wrong solver on it, so that the rare \
+      queries on which a wrong choice is costly are learned (default 0.1, 0 \
+      disables it)",
+)
+
+parser.add_argument(
     "--pp-stats",
     action=argparse.BooleanOptionalAction,
     default=False,
@@ -157,6 +167,8 @@ def mk_models(
 ):
     # Train one regression model per solver
     models = {}
+    # Time lost by choosing the wrong solver on a query
+    choice_cost = data.groupby(query_id_col)[delta_col].transform("max")
     for solver in data[solver_col].unique():
         df_solver = data[data[solver_col] == solver]
         X = df_solver[feature_cols]
@@ -167,6 +179,10 @@ def mk_models(
             weights = df_solver[frequency_col]
         else:
             weights = None
+        if args.delta_weight > 0:
+            cost_s = choice_cost[df_solver.index] / 1e9
+            delta_weights = 1 + cost_s / args.delta_weight
+            weights = delta_weights if weights is None else weights * delta_weights
 
         if gradient_boost:
             model = GradientBoostingRegressor(

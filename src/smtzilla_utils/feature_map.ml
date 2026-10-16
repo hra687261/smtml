@@ -171,6 +171,9 @@ type feat =
   | Fp_32
   | Fp_64
   | Fp_other
+  (* Bit-vector multiplications of two non-constant operands *)
+  | Nonlinear_mul
+  | Nonlinear_mul_bits (* sum of their widths *)
   (* Operators per type param *)
   | Typed of feat * ty_param
   (* Metadata *)
@@ -204,6 +207,8 @@ let incr_feat key m =
   Map.update key (function None -> Some 1 | Some c -> Some (c + 1)) m
 
 let get_feat key m = Map.find_def0 key m
+
+let add_feat key n m = Map.add key (get_feat key m + n) m
 
 let add_time time m = Map.add Time time m
 
@@ -389,6 +394,8 @@ let rec feat_to_string = function
   | Fp_32 -> "Fp_32"
   | Fp_64 -> "Fp_64"
   | Fp_other -> "Fp_other"
+  | Nonlinear_mul -> "Nonlinear_mul"
+  | Nonlinear_mul_bits -> "Nonlinear_mul_bits"
   | Typed (feat, ty_param) ->
     Fmt.str "%s:%s" (feat_to_string feat) (ty_param_to_string ty_param)
   | Depth -> "depth"
@@ -547,6 +554,8 @@ let rec feat_of_string = function
   | "Fp_32" -> Fp_32
   | "Fp_64" -> Fp_64
   | "Fp_other" -> Fp_other
+  | "Nonlinear_mul" -> Nonlinear_mul
+  | "Nonlinear_mul_bits" -> Nonlinear_mul_bits
   | "depth" -> Depth
   | "max_depth" -> Max_depth
   | "time" -> Time

@@ -6,7 +6,6 @@ open Cmdliner
 open Smtml_prelude.Result.Syntax
 open Term.Syntax
 open Smtml
-module IntSet = Set.Make (Int)
 
 let failwith_error_msg = function Ok v -> v | Error (`Msg m) -> failwith m
 
@@ -201,51 +200,28 @@ let are_trivial = function
     true
   | _l -> false
 
-(* type annotation because otherwise the typechecker thinks ?status is ~status *)
-let rec extract_queries
-  (smt2pp :
-    ?name:string -> ?status:[ `Sat | `Unknown | `Unsat ] -> Expr.t list Fmt.t )
-  destdir seen cnt l =
-  match l with
-  | [] -> Ok (seen, cnt)
-  | assertions :: t when are_trivial assertions ->
-    extract_queries smt2pp destdir seen cnt t
-  | assertions :: t ->
-    (* TODO: do better than Hashtbl.hash *)
-    let hash = Hashtbl.hash assertions in
-    if IntSet.mem hash seen then extract_queries smt2pp destdir seen cnt t
-    else
-      let file_path = Fpath.(destdir / Fmt.str "query.%d.smt2" cnt) in
-      Bos.OS.File.writef file_path "%a"
-        (smt2pp ?name:None ?status:None)
-        assertions
-      >>= fun _ ->
-      extract_queries smt2pp destdir (IntSet.add hash seen) (cnt + 1) t
-
-let rec queries_from_ic smt2pp destdir seen cnt ic =
-  let queries : Expr.t list list = Marshal.from_channel ic in
-  extract_queries smt2pp destdir seen cnt queries >>= fun (seen, cnt) ->
-  queries_from_ic smt2pp destdir seen cnt ic
-
+(* Queries are read with [Query_log] (re-hash-consed, deduplicated) and named
+   by their [query_id], as in the CSV of [replay] *)
 let extract_queries ?logic (path : Fpath.t) (destdir : Fpath.t) =
   let (module M) = Solver_dispatcher.mappings_of_solver Z3_solver in
   if not M.is_available then
     Fmt.failwith "Query extraction to smt file depends on Z3";
-  let smt2pp = M.Smtlib.pp ?logic in
-  let res =
-    Bos.OS.File.with_ic path
-      (fun ic seen ->
-        try queries_from_ic smt2pp destdir seen 1 ic >>| fun _ -> ()
-        with End_of_file ->
-          Log.debug (fun k -> k "Finished extracting queries@.");
-          Ok () )
-      IntSet.empty
+  let queries =
+    match Query_log.read path with
+    | Ok queries -> Query_log.unique queries
+    | Error (`Msg msg) ->
+      Fmt.failwith "Failed to extract queries from %a\nBecause of: %s" Fpath.pp
+        path msg
   in
-  match Result.join res with
-  | Ok () -> ()
-  | Error (`Msg msg) ->
-    Fmt.failwith "Failed to extract queries from %a\nBecause of: %s" Fpath.pp
-      path msg
+  List.iteri
+    (fun id (assertions, _frequency) ->
+      if not (are_trivial assertions) then
+        let file_path = Fpath.(destdir / Fmt.str "query.%d.smt2" id) in
+        failwith_error_msg
+        @@ Bos.OS.File.writef file_path "%a"
+             (M.Smtlib.pp ?name:None ?logic ?status:None)
+             assertions )
+    queries
 
 let solvers =
   let doc =
@@ -277,7 +253,8 @@ let extract_queries_cmd =
     let doc =
       "Given a file containing marshalled smtml queries, extracts the (unique) \
        queries into files in a given folder. The files are named \
-       `query.n.smt2` where `n` is the query's number."
+       `query.n.smt2` where `n` is the query's id (the query_id column of \
+       $(b,replay)). Trivial queries are skipped."
     in
     Cmd.info "extract-queries" ~doc
   in

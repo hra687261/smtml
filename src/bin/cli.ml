@@ -62,6 +62,13 @@ let logic =
     & opt (some (conv (Logic.of_string, Logic.pp))) None
     & info [ "logic" ] ~doc )
 
+let timeout =
+  let doc =
+    "Time limit of each check-sat, in milliseconds (the solver returns \
+     $(b,unknown) when it is reached)."
+  in
+  Arg.(value & opt (some int) None & info [ "timeout" ] ~doc ~docv:"MS")
+
 let from_file =
   let doc =
     "File containing a list of files to run. This argument discards any \
@@ -89,11 +96,12 @@ let commands =
       and+ solver_type
       and+ solver_mode
       and+ logic
+      and+ timeout
       and+ from_file
       and+ filenames in
       let settings =
         Settings.Run.make ~debug ~dry ~print_statistics ~no_strict_status
-          ~solver_type ~solver_mode ?logic ?from_file filenames
+          ~solver_type ~solver_mode ?logic ?timeout ?from_file filenames
       in
       Cmd_run.run settings
     in

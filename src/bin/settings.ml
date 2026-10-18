@@ -13,6 +13,7 @@ module Run = struct
     ; solver_type : Smtml.Solver_type.t
     ; solver_mode : Smtml.Solver_mode.t
     ; logic : Smtml.Logic.t option
+    ; timeout : int option
     ; from_file : Fpath.t option
     ; filenames : Fpath.t list [@main]
     }

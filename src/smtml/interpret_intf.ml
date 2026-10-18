@@ -25,6 +25,7 @@ module type S = sig
   val start :
        ?state:exec_state
     -> ?logic:Logic.t
+    -> ?timeout:int
     -> ?quiet:bool
     -> no_strict_status:bool
     -> Ast.Script.t

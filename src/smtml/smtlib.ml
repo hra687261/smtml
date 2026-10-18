@@ -234,7 +234,9 @@ module Term = struct
       | "bvadd", [ a; b ] -> Expr.raw_binop Ty_none Add a b
       | "bvsub", [ a; b ] -> Expr.raw_binop Ty_none Sub a b
       | "bvmul", [ a; b ] -> Expr.raw_binop Ty_none Mul a b
+      | "bvsdiv", [ a; b ] -> Expr.raw_binop Ty_none Div a b
       | "bvudiv", [ a; b ] -> Expr.raw_binop Ty_none DivU a b
+      | "bvsrem", [ a; b ] -> Expr.raw_binop Ty_none Rem a b
       | "bvurem", [ a; b ] -> Expr.raw_binop Ty_none RemU a b
       | "bvsmod", [ a; b ] -> Expr.raw_binop Ty_none Mod a b
       | "bvshl", [ a; b ] -> Expr.raw_binop Ty_none Shl a b
@@ -321,6 +323,39 @@ module Term = struct
           | Some bits -> bits
         in
         Expr.raw_cvtop Ty_none (Zero_extend bits) a
+      | "sign_extend", [ bits ], [ a ] ->
+        let bits =
+          match int_of_string_opt bits with
+          | None -> assert false
+          | Some bits -> bits
+        in
+        Expr.raw_cvtop Ty_none (Sign_extend bits) a
+      | (("rotate_left" | "rotate_right") as rot), [ n ], [ a ] ->
+        let n =
+          match int_of_string_opt n with None -> assert false | Some n -> n
+        in
+        let op : Ty.Unop.t =
+          if String.equal rot "rotate_left" then Rotl n else Rotr n
+        in
+        Expr.raw_unop Ty_none op a
+      | ( (("fp.to_sbv" | "fp.to_ubv") as conv)
+        , [ bits ]
+        , [ { node = Symbol { name = Simple ("roundTowardZero" | "RTZ"); _ }
+            ; _
+            }
+          ; a
+          ] ) ->
+        (* The encoding of the truncations only depends on the width of the
+           result, rounding towards zero *)
+        let bits =
+          match int_of_string_opt bits with
+          | None -> assert false
+          | Some bits -> bits
+        in
+        let op : Ty.Cvtop.t =
+          if String.equal conv "fp.to_sbv" then TruncSF64 else TruncUF64
+        in
+        Expr.raw_cvtop (Ty_bitv bits) op a
       | "re.loop", [ i1; i2 ], [ a ] ->
         let i1 =
           match int_of_string_opt i1 with None -> assert false | Some i1 -> i1

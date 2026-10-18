@@ -52,6 +52,16 @@ let no_strict_status =
   let doc = "Disable strict status checking" in
   Arg.(value & flag & info [ "no-strict-status" ] ~doc)
 
+let logic =
+  let doc =
+    "Logic with which the solver is created (e.g. QF_BVFP, as owi does). \
+     $(b,set-logic) commands are ignored."
+  in
+  Arg.(
+    value
+    & opt (some (conv (Logic.of_string, Logic.pp))) None
+    & info [ "logic" ] ~doc )
+
 let from_file =
   let doc =
     "File containing a list of files to run. This argument discards any \
@@ -78,11 +88,12 @@ let commands =
       and+ no_strict_status
       and+ solver_type
       and+ solver_mode
+      and+ logic
       and+ from_file
       and+ filenames in
       let settings =
         Settings.Run.make ~debug ~dry ~print_statistics ~no_strict_status
-          ~solver_type ~solver_mode ?from_file filenames
+          ~solver_type ~solver_mode ?logic ?from_file filenames
       in
       Cmd_run.run settings
     in
